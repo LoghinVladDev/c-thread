@@ -25,14 +25,24 @@ set(C_THREAD_INCLUDE src/thread src/cpp)
 
 include_directories(${C_THREAD_INCLUDE})
 
+if ( NOT TARGET threadTest1 )
 add_executable(threadTest1 ${C_THREAD_C_SRC})
 target_link_libraries( threadTest1 ${C_THREAD_LIBS} )
+endif()
 
+if ( NOT TARGET threadTest1 )
 add_executable(threadCppTest src/tests/threadCppTest.cpp ${C_THREAD_CPP_SRC})
 target_link_libraries( threadCppTest ${C_THREAD_LIBS} )
+endif()
 
+
+if ( NOT TARGET threadTest1 )
 add_library(c-thread-lib STATIC ${C_THREAD_C_SRC})
 target_link_libraries(c-thread-lib ${C_THREAD_LIBS})
+endif()
 
+if ( NOT TARGET threadTest1 )
 add_library(cpp-thread-lib STATIC ${C_THREAD_CPP_SRC})
 target_link_libraries(cpp-thread-lib ${C_THREAD_LIBS})
+endif()
+
