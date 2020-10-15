@@ -31,8 +31,8 @@ target_link_libraries( threadTest1 ${C_THREAD_LIBS} )
 add_executable(threadCppTest src/tests/threadCppTest.cpp ${C_THREAD_CPP_SRC})
 target_link_libraries( threadCppTest ${C_THREAD_LIBS} )
 
-add_library(C_THREAD_LIB STATIC ${C_THREAD_C_SRC})
-target_link_libraries(C_THREAD_LIB ${C_THREAD_LIBS})
+add_library(c-thread-lib STATIC ${C_THREAD_C_SRC})
+target_link_libraries(c-thread-lib ${C_THREAD_LIBS})
 
-add_library(CPP_THREAD_LIB STATIC ${C_THREAD_CPP_SRC})
-target_link_libraries(CPP_THREAD_LIB ${C_THREAD_LIBS})
+add_library(cpp-thread-lib STATIC ${C_THREAD_CPP_SRC})
+target_link_libraries(cpp-thread-lib ${C_THREAD_LIBS})
