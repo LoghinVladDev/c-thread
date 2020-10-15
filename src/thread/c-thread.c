@@ -14,7 +14,7 @@
 #endif
 
 typedef struct {
-    Thread              ID;
+    thread_t            ID;
     pthread_t           pthreadHandle;
     pthread_mutex_t     pthreadMutex;
     void              * createInfo;
@@ -26,7 +26,7 @@ struct _ThreadHandleNode { // NOLINT(bugprone-reserved-identifier)
 };
 
 static struct {
-    uint8               threadRunning;
+    bool               threadRunning;
 } adminThreadInfo;
 
 typedef struct _ThreadHandleNode ThreadHandleNode;
@@ -35,26 +35,26 @@ typedef ThreadHandleNode * ThreadHandleLinkedList;
 static pthread_mutex_t        listLock;
 static pthread_mutex_t        consoleLock;
 static ThreadHandleLinkedList threadListHead    = NULL;
-static Thread                 threadCounter     = THREAD_FIRST_ID;
-static Thread                 adminThread       = THREAD_MAX;
+static thread_t               threadCounter     = THREAD_FIRST_ID;
+static thread_t               adminThread       = THREAD_MAX;
 
 static void             * internalCreateThreadNoArgs ( void* );
 static void             * internalCreateThreadArgs ( void* );
 static void             * internalCreateThreadFormat ( void* );
 static void             * internalCreateThreadArgPtr ( void* );
-static ThreadHandleInfo * getThreadHandleInfo ( Thread );
-static ThreadHandleInfo * createThreadHandleInfo ( Thread );
-static ThreadResult       removeThreadInfo ( Thread );
+static ThreadHandleInfo * getThreadHandleInfo (thread_t );
+static ThreadHandleInfo * createThreadHandleInfo (thread_t );
+static ThreadResult       removeThreadInfo (thread_t );
 static void               clearThreadInfoList ();
 
 static void               printThreadInfo ( const ThreadHandleInfo *, const char * );
 static void               printProcesses ();
 static void               printProcessesNotHidden ();
-static uint8              treadAdminThreadRequest ( const char* );
+static bool               treadAdminThreadRequest ( const char* );
 static void               printAdminHelpInfo ();
 static void             * adminThreadMain ( void * );
 
-ThreadHandleInfo * getThreadHandleInfo ( Thread ID ) {
+ThreadHandleInfo * getThreadHandleInfo (thread_t ID ) {
     pthread_mutex_lock( & listLock );
 
     ThreadHandleLinkedList headCopy = threadListHead;
@@ -71,7 +71,7 @@ ThreadHandleInfo * getThreadHandleInfo ( Thread ID ) {
     return NULL;
 }
 
-ThreadHandleInfo * createThreadHandleInfo ( Thread ID ) {
+ThreadHandleInfo * createThreadHandleInfo (thread_t ID ) {
     pthread_mutex_lock( & listLock );
     ThreadHandleLinkedList newHead = ( ThreadHandleNode * ) malloc ( sizeof ( ThreadHandleNode ) );
 
@@ -88,7 +88,7 @@ ThreadHandleInfo * createThreadHandleInfo ( Thread ID ) {
     return ( & threadListHead->data );
 }
 
-ThreadResult removeThreadInfo ( Thread ID ) {
+ThreadResult removeThreadInfo (thread_t ID ) {
     pthread_mutex_lock( & listLock );
     ThreadHandleLinkedList headCopy = threadListHead;
 
@@ -137,7 +137,7 @@ void clearThreadInfoList () {
     pthread_mutex_unlock( & listLock );
 }
 
-ThreadResult killThread ( Thread ID ) {
+ThreadResult killThread (thread_t ID ) {
     if ( ID == THREAD_MAX )
         return THREAD_SUCCESS;
     __auto_type pThreadInfo = getThreadHandleInfo( ID );
@@ -152,7 +152,7 @@ ThreadResult killThread ( Thread ID ) {
     return THREAD_SUCCESS;
 }
 
-ThreadResult stopThread ( Thread ID ) {
+ThreadResult stopThread (thread_t ID ) {
     if ( ID == THREAD_MAX )
         return THREAD_SUCCESS;
     __auto_type pThreadInfo = getThreadHandleInfo( ID );
@@ -168,7 +168,7 @@ ThreadResult stopThread ( Thread ID ) {
     return THREAD_SUCCESS;
 }
 
-ThreadResult lock ( Thread ID ) {
+ThreadResult lock (thread_t ID ) {
     __auto_type pThreadInfo = getThreadHandleInfo( ID );
     if ( pThreadInfo == NULL )
         return THREAD_SUCCESS;
@@ -178,7 +178,7 @@ ThreadResult lock ( Thread ID ) {
     return THREAD_SUCCESS;
 }
 
-ThreadResult unlock ( Thread ID ) {
+ThreadResult unlock (thread_t ID ) {
     __auto_type pThreadInfo = getThreadHandleInfo( ID );
     if ( pThreadInfo == NULL )
         return THREAD_SUCCESS;
@@ -188,7 +188,9 @@ ThreadResult unlock ( Thread ID ) {
     return THREAD_SUCCESS;
 }
 
-ThreadResult createThreadArgs ( Thread * pID, void (* pFunc) (int, char**), int argc, char ** argv ) {
+//ThreadResult createThreadF ( thread_t * pID, void(* pFunc)(const char*) )
+
+ThreadResult createThreadArgs (thread_t * pID, void (* pFunc) (int, char**), int argc, char ** argv ) {
     if ( pID == NULL || pFunc == NULL )
         return THREAD_ARG_NULL;
 
@@ -216,7 +218,7 @@ ThreadResult createThreadArgs ( Thread * pID, void (* pFunc) (int, char**), int 
 }
 
 #include <errno.h>
-ThreadResult startThread ( Thread ID ) {
+ThreadResult startThread (thread_t ID ) {
     __auto_type pThreadInfo = getThreadHandleInfo( ID );
 
     void * (* pStartFunc) (void*);
@@ -248,7 +250,7 @@ ThreadResult startThread ( Thread ID ) {
     return THREAD_SUCCESS;
 }
 
-ThreadResult createThreadArgPtr ( Thread * pID, void (*pFunc) (void*), void * pVoidArg ) {
+ThreadResult createThreadArgPtr (thread_t * pID, void (*pFunc) (void*), void * pVoidArg ) {
     if ( pID == NULL || pFunc == NULL )
         return THREAD_ARG_NULL;
 
@@ -274,7 +276,7 @@ ThreadResult createThreadArgPtr ( Thread * pID, void (*pFunc) (void*), void * pV
     return THREAD_SUCCESS;
 }
 
-ThreadResult createThread ( Thread * pID, void ( * pFunc ) ( void ) ) {
+ThreadResult createThread (thread_t * pID, void ( * pFunc ) (void ) ) {
     if ( pID == NULL || pFunc == NULL )
         return THREAD_ARG_NULL;
 
@@ -300,43 +302,192 @@ ThreadResult createThread ( Thread * pID, void ( * pFunc ) ( void ) ) {
 }
 
 typedef struct ThreadArgumentNode {
-    Thread ID;
+    thread_t ID;
     void * data;
     uint64 size;
     struct ThreadArgumentNode * pNext;
+    char * pTag;
 } ThreadArgumentNode;
 
+static pthread_mutex_t      threadArgumentsLock;
 static ThreadArgumentNode * threadArgumentsHashTable [ THREAD_ARGUMENT_HASH_SIZE ];
 
-ThreadResult setArgument ( Thread ID, void * pArg, uint64 argSize) {
-    if ( pArg == NULL || argSize == 0 )
-        return THREAD_ARG_NULL;
+ThreadResult getArgument (thread_t ID, const char * pTag, void * pArg, uint64 argSize) {
+    pthread_mutex_lock( & threadArgumentsLock );
 
-    uint32 key = (uint32) (ID % THREAD_ARGUMENT_HASH_SIZE);
+    if ( pArg == NULL || argSize == 0 ) {
+        pthread_mutex_unlock( & threadArgumentsLock );
+        return THREAD_ARG_NULL;
+    }
+
+    THREAD_KEY_TYPE key = (THREAD_KEY_TYPE) (ID % THREAD_ARGUMENT_HASH_SIZE);
+
+    __auto_type listHead = threadArgumentsHashTable[ key ];
+
+    if ( listHead == NULL ) {
+        pthread_mutex_unlock(&threadArgumentsLock);
+        return THREAD_ARG_NOT_PRESENT;
+    }
+
+    if ( listHead->pNext == NULL ) {
+        if ( strcmp ( listHead->pTag, pTag ) != 0 ) {
+            pthread_mutex_unlock( & threadArgumentsLock );
+            return THREAD_ARG_NOT_PRESENT;
+        }
+
+        memcpy( pArg, listHead->data, listHead->size );
+        free( listHead->data );
+        free( listHead->pTag );
+        free( listHead );
+
+        threadArgumentsHashTable[ key ] = NULL;
+
+        pthread_mutex_unlock( & threadArgumentsLock );
+        return THREAD_SUCCESS;
+    }
+
+    while ( listHead->pNext != NULL ) {
+        if ( strcmp ( listHead->pNext->pTag, pTag ) == 0 ) {
+            memcpy ( pArg, listHead->pNext->data, listHead->pNext->size );
+            free( listHead->pNext->data );
+            free( listHead->pNext->pTag );
+
+            __auto_type p = listHead->pNext;
+            listHead->pNext = listHead->pNext->pNext;
+            free ( p );
+
+            pthread_mutex_unlock( & threadArgumentsLock );
+            return THREAD_SUCCESS;
+        }
+
+        listHead = listHead->pNext;
+    }
+
+    pthread_mutex_unlock( & threadArgumentsLock );
+    return THREAD_ARG_NOT_PRESENT;
+}
+
+ThreadResult setArgument (thread_t ID, const char * pTag, void * pArg, uint64 argSize) {
+    pthread_mutex_lock( & threadArgumentsLock );
+
+    if ( pArg == NULL || argSize == 0 ){
+        pthread_mutex_unlock( & threadArgumentsLock );
+        return THREAD_ARG_NULL;
+    }
+    THREAD_KEY_TYPE key = (THREAD_KEY_TYPE) (ID % THREAD_ARGUMENT_HASH_SIZE);
 
     __auto_type listHead = threadArgumentsHashTable[ key ];
     __auto_type pNewNode = ( ThreadArgumentNode * ) malloc ( sizeof ( ThreadArgumentNode ) );
     pNewNode->ID    = ID;
     pNewNode->data  = (void *) malloc ( argSize );
+    pNewNode->pTag  = (char *) malloc ( strlen ( pTag ) + 1 );
     pNewNode->size  = argSize;
-    pNewNode->pNext = NULL;
+    pNewNode->pNext = listHead;
     memcpy ( pNewNode->data, pArg, argSize );
+    strcpy ( pNewNode->pTag, pTag );
 
-    if ( listHead == NULL ) {
-        threadArgumentsHashTable[ key ] = pNewNode;
-        return THREAD_SUCCESS;
-    }
+    threadArgumentsHashTable [ key ] = pNewNode;
 
-    while ( listHead->pNext != NULL ) {
-        listHead = listHead->pNext;
-    }
+//    if ( listHead == NULL ) {
+//        threadArgumentsHashTable[ key ] = pNewNode;
+//        pthread_mutex_unlock( & threadArgumentsLock );
+//        return THREAD_SUCCESS;
+//    }
 
-    listHead->pNext = pNewNode;
+//    while ( listHead->pNext != NULL ) {
+//        listHead = listHead->pNext;
+//    }
+
+//    listHead->pNext = pNewNode;
+    pthread_mutex_unlock( & threadArgumentsLock );
     return THREAD_SUCCESS;
 }
 
+typedef struct ThreadMemoryPointerNode {
+    thread_t ID;
+    void * p;
+    struct ThreadMemoryPointerNode * pNext;
+} ThreadMemoryPointerNode;
+
+static pthread_mutex_t threadMemoryLock;
+static ThreadMemoryPointerNode * threadMemoryHashTable [ THREAD_ARGUMENT_HASH_SIZE ];
+
+void * mallocThreadSafe (thread_t ID, uint64 size ) {
+    pthread_mutex_lock( & threadMemoryLock );
+
+    if ( size == 0 ) {
+        pthread_mutex_unlock( & threadMemoryLock );
+        return NULL;
+    }
+
+    THREAD_KEY_TYPE key = ( THREAD_KEY_TYPE ) ( ID % THREAD_ARGUMENT_HASH_SIZE );
+
+    __auto_type listHead = threadMemoryHashTable [ key ];
+    __auto_type pNewNode = ( ThreadMemoryPointerNode * ) malloc ( sizeof ( ThreadMemoryPointerNode ) );
+    pNewNode->ID    = ID;
+    pNewNode->p     = ( void * ) malloc ( size );
+    pNewNode->pNext = listHead;
+
+    threadMemoryHashTable [ key ] = pNewNode;
+
+    pthread_mutex_unlock( & threadMemoryLock );
+
+    return pNewNode->p;
+}
+
+void * callocThreadSafe (thread_t ID, uint64 count, uint64 dataSize ) {
+    __auto_type pMem = mallocThreadSafe( ID, count * dataSize );
+    memset( pMem, 0, count * dataSize );
+    return pMem;
+}
+
+void freeThreadSafe (thread_t ID, void * pData ) {
+    if ( pData == NULL )
+        return;
+
+    pthread_mutex_lock( & threadMemoryLock );
+
+    THREAD_KEY_TYPE key = ( THREAD_KEY_TYPE ) ( ID % THREAD_ARGUMENT_HASH_SIZE );
+
+    __auto_type listHead = threadMemoryHashTable[ key ];
+
+    if ( listHead == NULL ) {
+        pthread_mutex_unlock( & threadMemoryLock );
+        return;
+    }
+
+    if ( listHead->pNext == NULL ) {
+        if ( listHead->p == pData ) {
+            free ( listHead->p );
+            free ( listHead );
+
+            threadMemoryHashTable[ key ] = NULL;
+        }
+
+        pthread_mutex_unlock( & threadMemoryLock );
+        return;
+    }
+
+    while ( listHead->pNext != NULL ) {
+        if ( listHead->pNext->p == pData ) {
+            free ( listHead->pNext->p );
+
+            __auto_type p = listHead->pNext;
+            listHead->pNext = listHead->pNext->pNext;
+            free (p);
+
+            pthread_mutex_unlock( & threadMemoryLock );
+            return;
+        }
+
+        listHead = listHead->pNext;
+    }
+
+    pthread_mutex_unlock( & threadMemoryLock );
+}
+
 void printThreadInfo ( const ThreadHandleInfo * pThreadInfo, const char * prefix ) {
-    printf( "%s[Thread] [ID : %llu] [Type : %s]\n", prefix, pThreadInfo->ID, (pThreadInfo->ID == THREAD_MAX) ? "Admin Thread" : "Regular Thread" );
+    printf( "%s[thread_t] [ID : %llu] [Type : %s]\n", prefix, pThreadInfo->ID, (pThreadInfo->ID == THREAD_MAX) ? "Admin thread_t" : "Regular thread_t" );
     fflush(stdout);
 }
 
@@ -372,9 +523,9 @@ void printProcessesNotHidden () {
     pthread_mutex_unlock( & listLock );
 }
 
-uint8 treadAdminThreadRequest ( const char* request ) {
+bool treadAdminThreadRequest ( const char* request ) {
     if ( strcmp ( request, "stop\n" ) == 0 )
-        return 0;
+        return false;
 
     if ( strstr ( request, "ls " ) == request ) {
         if ( strstr ( request, "-a" ) != NULL )
@@ -419,7 +570,7 @@ uint8 treadAdminThreadRequest ( const char* request ) {
         printAdminHelpInfo();
     }
 
-    return 1;
+    return true;
 }
 
 void printAdminHelpInfo () {
@@ -465,13 +616,13 @@ void * adminThreadMain ( void * args ) {
     return ( NULL );
 }
 
-inline uint8 isAdminThreadRunning () {
+inline bool isAdminThreadRunning () {
     return adminThreadInfo.threadRunning;
 }
 
 ThreadResult createCLIAdminThread () {
 
-    adminThreadInfo.threadRunning = 1;
+    adminThreadInfo.threadRunning = true;
 
     __auto_type pThreadInfo = createThreadHandleInfo( adminThread );
     __auto_type pThreadCreateInfo = ( ThreadCreateInfoNoArgs * ) malloc ( sizeof ( ThreadCreateInfoNoArgs ) );
@@ -527,22 +678,245 @@ void * internalCreateThreadArgPtr ( void * pVoidArg ) {
     return NULL;
 }
 
+static bool threadModuleInitialised = false;
+
 ThreadResult initThreadModule () {
+    if ( ! threadModuleInitialised )
+        threadModuleInitialised = true;
+
     pthread_mutex_init( & listLock, NULL );
     pthread_mutex_init( & consoleLock, NULL );
+    pthread_mutex_init( & threadArgumentsLock, NULL );
+    pthread_mutex_init( & threadMemoryLock, NULL );
 
     return THREAD_SUCCESS;
+}
+
+static void clearThreadArgumentsHashTable() {
+    pthread_mutex_lock( & threadArgumentsLock );
+    for ( uint64 key = 0; key <= THREAD_ARGUMENT_HASH_SIZE - 1; key ++ ) {
+
+        __auto_type listHead = threadArgumentsHashTable[ key ];
+
+        while ( listHead != NULL ) {
+            free( listHead->data );
+            free( listHead->pTag );
+
+            __auto_type p = listHead;
+            listHead = listHead->pNext;
+            free ( p );
+        }
+
+        threadArgumentsHashTable[ key ] = NULL;
+    }
+
+    pthread_mutex_unlock( & threadArgumentsLock );
+}
+
+static void clearThreadMemoryHashTable() {
+    pthread_mutex_lock( & threadMemoryLock );
+
+    for ( uint64 key = 0; key <= THREAD_ARGUMENT_HASH_SIZE - 1; key++ ) {
+        __auto_type listHead = threadMemoryHashTable [ key ];
+
+        while ( listHead != NULL ) {
+            free ( listHead->p );
+
+            __auto_type  p = listHead;
+            listHead = listHead->pNext;
+            free (p);
+        }
+
+        threadMemoryHashTable [ key ] = NULL;
+    }
+
+    pthread_mutex_unlock( & threadMemoryLock );
 }
 
 ThreadResult stopThreadModule() {
 
     clearThreadInfoList();
+    clearThreadArgumentsHashTable();
+    clearThreadMemoryHashTable();
 
     pthread_mutex_destroy( & listLock );
     pthread_mutex_destroy( & consoleLock );
 
     return THREAD_SUCCESS;
 }
+
+#ifdef __linux
+
+void threadPrintf ( const char * format, ... ){
+    pthread_mutex_lock( & consoleLock );
+
+    va_list argumentsPointer;
+    static char cliBuffer [ CLI_BUFFER_SIZE ];
+
+    memset ( cliBuffer, 0, CLI_BUFFER_SIZE );
+
+    char * lastMemLoc = cliBuffer;
+
+    typedef enum {
+        REG_STR,
+        FORMAT_START,
+        LONG_FORMAT,
+    } State;
+
+    State state;
+    va_start(argumentsPointer, format);
+
+    for ( uint32 i = 0, length = strlen(format); i < length; i++ ) {
+        if ( state == REG_STR ) {
+
+            if ( format[i] == '%' )
+                state = FORMAT_START;
+            else {
+                * ( lastMemLoc++ ) = format[i];
+                * ( lastMemLoc ) = 0;
+            }
+        } else if ( state == FORMAT_START ) {
+            if (format[i] == 'd') {
+                sprintf(lastMemLoc, "%d", va_arg(argumentsPointer, int));
+                lastMemLoc += strlen(lastMemLoc);
+                *(lastMemLoc) = 0;
+
+                state = REG_STR;
+            } else if (format[i] == 's') {
+                sprintf(lastMemLoc, "%s", va_arg(argumentsPointer, const char *));
+                lastMemLoc += strlen(lastMemLoc);
+                *(lastMemLoc) = 0;
+
+                state = REG_STR;
+            } else if (format[i] == 'u') {
+                sprintf(lastMemLoc, "%u", va_arg(argumentsPointer, unsigned int));
+                lastMemLoc += strlen(lastMemLoc);
+                *(lastMemLoc) = 0;
+
+                state = REG_STR;
+            } else if (format[i] == 'l') {
+                state = LONG_FORMAT;
+            } else {
+                *(lastMemLoc++) = format[i];
+                *(lastMemLoc) = 0;
+
+                state = REG_STR;
+            }
+        } else if ( state == LONG_FORMAT ) {
+            if (format[i] == 'd') {
+                sprintf(lastMemLoc, "%lld", va_arg(argumentsPointer, long long int));
+                lastMemLoc += strlen(lastMemLoc);
+                *(lastMemLoc) = 0;
+
+                state = REG_STR;
+            } else if (format[i] == 'u') {
+                sprintf(lastMemLoc, "%llu", va_arg(argumentsPointer, long long unsigned int));
+                lastMemLoc += strlen(lastMemLoc);
+                *(lastMemLoc) = 0;
+
+                state = REG_STR;
+            } else {
+                *(lastMemLoc++) = format[i];
+                *(lastMemLoc) = 0;
+
+                state = REG_STR;
+            }
+        }
+    }
+
+    printf("%s", cliBuffer);
+
+    fflush(stdout);
+
+    pthread_mutex_unlock( & consoleLock );
+}
+
+void threadTryPrintf ( const char * format, ... ) {
+    if ( 0 == pthread_mutex_trylock( & consoleLock ) ) {
+
+        va_list argumentsPointer;
+        static char cliBuffer[CLI_BUFFER_SIZE];
+
+        memset(cliBuffer, 0, CLI_BUFFER_SIZE);
+
+        char *lastMemLoc = cliBuffer;
+
+        typedef enum {
+            REG_STR,
+            FORMAT_START,
+            LONG_FORMAT,
+        } State;
+
+        State state;
+        va_start(argumentsPointer, format);
+
+        for (uint32 i = 0, length = strlen(format); i < length; i++) {
+            if (state == REG_STR) {
+
+                if (format[i] == '%')
+                    state = FORMAT_START;
+                else {
+                    *(lastMemLoc++) = format[i];
+                    *(lastMemLoc) = 0;
+                }
+            } else if (state == FORMAT_START) {
+                if (format[i] == 'd') {
+                    sprintf(lastMemLoc, "%d", va_arg(argumentsPointer, int));
+                    lastMemLoc += strlen(lastMemLoc);
+                    *(lastMemLoc) = 0;
+
+                    state = REG_STR;
+                } else if (format[i] == 's') {
+                    sprintf(lastMemLoc, "%s", va_arg(argumentsPointer, const char *));
+                    lastMemLoc += strlen(lastMemLoc);
+                    *(lastMemLoc) = 0;
+
+                    state = REG_STR;
+                } else if (format[i] == 'u') {
+                    sprintf(lastMemLoc, "%u", va_arg(argumentsPointer, unsigned int));
+                    lastMemLoc += strlen(lastMemLoc);
+                    *(lastMemLoc) = 0;
+
+                    state = REG_STR;
+                } else if (format[i] == 'l') {
+                    state = LONG_FORMAT;
+                } else {
+                    *(lastMemLoc++) = format[i];
+                    *(lastMemLoc) = 0;
+
+                    state = REG_STR;
+                }
+            } else if (state == LONG_FORMAT) {
+                if (format[i] == 'd') {
+                    sprintf(lastMemLoc, "%lld", va_arg(argumentsPointer, long long int));
+                    lastMemLoc += strlen(lastMemLoc);
+                    *(lastMemLoc) = 0;
+
+                    state = REG_STR;
+                } else if (format[i] == 'u') {
+                    sprintf(lastMemLoc, "%llu", va_arg(argumentsPointer, long long unsigned int));
+                    lastMemLoc += strlen(lastMemLoc);
+                    *(lastMemLoc) = 0;
+
+                    state = REG_STR;
+                } else {
+                    *(lastMemLoc++) = format[i];
+                    *(lastMemLoc) = 0;
+
+                    state = REG_STR;
+                }
+            }
+        }
+
+        printf("%s", cliBuffer);
+
+        fflush(stdout);
+
+        pthread_mutex_unlock(&consoleLock);
+    }
+}
+
+#endif
 
 void threadPutS( const char * string ) {
     pthread_mutex_lock( & consoleLock );

@@ -6,18 +6,27 @@
 #ifndef C_THREAD_C_THREAD_PRIVATE
 #define C_THREAD_C_THREAD_PRIVATE
 
-#include <c-thread.h>
+#include <c-thread-types.h>
 
-#define NULL_THREAD (Thread) 0U
-#define THREAD_FIRST_ID (Thread) 1U
+#define THREAD_FIRST_ID (thread_t) 1U
 
-#ifndef UINT64_MAX
-#define UINT64_MAX ((uint64)~(uint64)0U)
+#include <stdint.h>
+
+#define THREAD_MAX (thread_t) UINT64_MAX
+
+#ifndef THREAD_ARGUMENT_HASH_SIZE
+#define THREAD_ARGUMENT_HASH_SIZE 256
 #endif
 
-#define THREAD_MAX (Thread) UINT64_MAX
-
-#define THREAD_ARGUMENT_HASH_SIZE 256
+#if THREAD_ARGUMENT_HASH_SIZE <= UINT8_MAX + 1
+#define THREAD_KEY_TYPE uint8
+#elif THREAD_ARGUMENT_HASH_SIZE <= UINT16_MAX + 1
+#define THREAD_KEY_TYPE uint16
+#elif THREAD_ARGUMENT_HASH_SIZE <= UINT32_MAX + 1
+#define THREAD_KEY_TYPE uint32
+#else
+#define THREAD_KEY_TYPE uint64
+#endif
 
 #define CLI_BUFFER_SIZE 65536
 
