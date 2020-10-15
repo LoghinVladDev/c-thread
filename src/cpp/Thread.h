@@ -13,7 +13,8 @@ extern "C" {
 
 class Thread {
 private:
-    thread_t _ID {NULL_THREAD}; // NOLINT(bugprone-reserved-identifier)
+    thread_t        _ID        {NULL_THREAD}; // NOLINT(bugprone-reserved-identifier)
+    volatile bool   _isRunning {false};
     static void threadClassCallerFunction( void * ) noexcept;
 
 protected:
@@ -36,6 +37,10 @@ public:
     virtual void run() = 0;
 
     void start() noexcept(false);
+
+    [[nodiscard]] bool isRunning () const noexcept {
+        return this->_isRunning;
+    }
 };
 
 

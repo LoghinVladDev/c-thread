@@ -10,9 +10,11 @@ void Thread::start() noexcept(false){
 
     createThreadArgPtr( & this->_ID, threadClassCallerFunction, (void*) this);
 
+    this->_isRunning = true;
     startThread( this->_ID );
 }
 
 void Thread::threadClassCallerFunction(void * pObj) noexcept {
     ( ( Thread * ) ( pObj ) )->run();
+    ( ( Thread * ) ( pObj ) )->_isRunning = false;
 }

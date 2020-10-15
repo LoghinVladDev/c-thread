@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(C_THREAD_LIBS -lpthread)
 
 include_directories(src/thread)
+include_directories(src/cpp)
 
 add_executable(
         threadTest1
