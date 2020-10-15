@@ -13,47 +13,6 @@
 #include <stdarg.h>
 #endif
 
-typedef struct {
-    thread_t            ID;
-    pthread_t           pthreadHandle;
-    pthread_mutex_t     pthreadMutex;
-    void              * createInfo;
-} ThreadHandleInfo;
-
-struct _ThreadHandleNode { // NOLINT(bugprone-reserved-identifier)
-    ThreadHandleInfo data;
-    struct _ThreadHandleNode * next;
-};
-
-static struct {
-    bool               threadRunning;
-} adminThreadInfo;
-
-typedef struct _ThreadHandleNode ThreadHandleNode;
-typedef ThreadHandleNode * ThreadHandleLinkedList;
-
-static pthread_mutex_t        listLock;
-static pthread_mutex_t        consoleLock;
-static ThreadHandleLinkedList threadListHead    = NULL;
-static thread_t               threadCounter     = THREAD_FIRST_ID;
-static thread_t               adminThread       = THREAD_MAX;
-
-static void             * internalCreateThreadNoArgs ( void* );
-static void             * internalCreateThreadArgs ( void* );
-static void             * internalCreateThreadFormat ( void* );
-static void             * internalCreateThreadArgPtr ( void* );
-static ThreadHandleInfo * getThreadHandleInfo (thread_t );
-static ThreadHandleInfo * createThreadHandleInfo (thread_t );
-static ThreadResult       removeThreadInfo (thread_t );
-static void               clearThreadInfoList ();
-
-static void               printThreadInfo ( const ThreadHandleInfo *, const char * );
-static void               printProcesses ();
-static void               printProcessesNotHidden ();
-static bool               treadAdminThreadRequest ( const char* );
-static void               printAdminHelpInfo ();
-static void             * adminThreadMain ( void * );
-
 ThreadHandleInfo * getThreadHandleInfo (thread_t ID ) {
     pthread_mutex_lock( & listLock );
 
@@ -271,8 +230,6 @@ ThreadResult createThreadArgPtr (thread_t * pID, void (*pFunc) (void*), void * p
 
     pThreadInfo->createInfo = pThreadCreateInfo;
 
-//    pthread_create ( & pThreadInfo->pthreadHandle, NULL, internalCreateThreadArgPtr, pThreadCreateInfo );
-
     return THREAD_SUCCESS;
 }
 
@@ -296,22 +253,8 @@ ThreadResult createThread (thread_t * pID, void ( * pFunc ) (void ) ) {
 
     pThreadInfo->createInfo = pThreadCreateInfo;
 
-//    pthread_create ( & pThreadInfo->pthreadHandle, NULL, internalCreateThreadNoArgs, pThreadCreateInfo );
-
     return THREAD_SUCCESS;
 }
-
-typedef struct ThreadArgumentNode {
-    thread_t ID;
-    void * data;
-    uint64 size;
-    struct ThreadArgumentNode * pNext;
-    char * pTag;
-} ThreadArgumentNode;
-
-static pthread_mutex_t      threadArgumentsLock;
-static ThreadArgumentNode * threadArgumentsHashTable [ THREAD_ARGUMENT_HASH_SIZE ];
-
 ThreadResult getArgument (thread_t ID, const char * pTag, void * pArg, uint64 argSize) {
     pthread_mutex_lock( & threadArgumentsLock );
 
@@ -388,29 +331,9 @@ ThreadResult setArgument (thread_t ID, const char * pTag, void * pArg, uint64 ar
 
     threadArgumentsHashTable [ key ] = pNewNode;
 
-//    if ( listHead == NULL ) {
-//        threadArgumentsHashTable[ key ] = pNewNode;
-//        pthread_mutex_unlock( & threadArgumentsLock );
-//        return THREAD_SUCCESS;
-//    }
-
-//    while ( listHead->pNext != NULL ) {
-//        listHead = listHead->pNext;
-//    }
-
-//    listHead->pNext = pNewNode;
     pthread_mutex_unlock( & threadArgumentsLock );
     return THREAD_SUCCESS;
 }
-
-typedef struct ThreadMemoryPointerNode {
-    thread_t ID;
-    void * p;
-    struct ThreadMemoryPointerNode * pNext;
-} ThreadMemoryPointerNode;
-
-static pthread_mutex_t threadMemoryLock;
-static ThreadMemoryPointerNode * threadMemoryHashTable [ THREAD_ARGUMENT_HASH_SIZE ];
 
 void * mallocThreadSafe (thread_t ID, uint64 size ) {
     pthread_mutex_lock( & threadMemoryLock );
@@ -678,8 +601,6 @@ void * internalCreateThreadArgPtr ( void * pVoidArg ) {
     return NULL;
 }
 
-static bool threadModuleInitialised = false;
-
 ThreadResult initThreadModule () {
     if ( ! threadModuleInitialised )
         threadModuleInitialised = true;
@@ -692,7 +613,7 @@ ThreadResult initThreadModule () {
     return THREAD_SUCCESS;
 }
 
-static void clearThreadArgumentsHashTable() {
+void clearThreadArgumentsHashTable() {
     pthread_mutex_lock( & threadArgumentsLock );
     for ( uint64 key = 0; key <= THREAD_ARGUMENT_HASH_SIZE - 1; key ++ ) {
 
@@ -713,7 +634,7 @@ static void clearThreadArgumentsHashTable() {
     pthread_mutex_unlock( & threadArgumentsLock );
 }
 
-static void clearThreadMemoryHashTable() {
+void clearThreadMemoryHashTable() {
     pthread_mutex_lock( & threadMemoryLock );
 
     for ( uint64 key = 0; key <= THREAD_ARGUMENT_HASH_SIZE - 1; key++ ) {
