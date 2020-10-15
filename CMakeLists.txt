@@ -4,10 +4,7 @@ project(c-thread)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
 
-set(
-        C_THREAD_LIBS
-        -lpthread
-)
+set(C_THREAD_LIBS -lpthread)
 
 set(
         C_THREAD_C_SRC
@@ -24,25 +21,18 @@ set(
         src/cpp/Thread.h
 )
 
-set(
-        C_THREAD_INCLUDE
-        src/thread
-        src/cpp
-)
+set(C_THREAD_INCLUDE src/thread src/cpp)
 
 include_directories(${C_THREAD_INCLUDE})
 
-add_executable(
-        threadTest1
-        ${C_THREAD_C_SRC}
-)
-
+add_executable(threadTest1 ${C_THREAD_C_SRC})
 target_link_libraries( threadTest1 ${C_THREAD_LIBS} )
 
-add_executable(
-        threadCppTest
-        src/tests/threadCppTest.cpp
-        ${C_THREAD_CPP_SRC}
-)
-
+add_executable(threadCppTest src/tests/threadCppTest.cpp ${C_THREAD_CPP_SRC})
 target_link_libraries( threadCppTest ${C_THREAD_LIBS} )
+
+add_library(C_THREAD_LIB STATIC ${C_THREAD_C_SRC})
+target_link_libraries(C_THREAD_LIB ${C_THREAD_LIBS})
+
+add_library(CPP_THREAD_LIB STATIC ${C_THREAD_CPP_SRC})
+target_link_libraries(CPP_THREAD_LIB ${C_THREAD_LIBS})
