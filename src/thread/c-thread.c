@@ -167,7 +167,12 @@ ThreadResult createThreadArgs (thread_t * pID, void (* pFunc) (int, char**), int
     pThreadCreateInfo->pFunc = pFunc;
     pThreadCreateInfo->ID    = * pID;
     pThreadCreateInfo->argc  = argc;
-    pThreadCreateInfo->argv  = argv;
+
+    pThreadCreateInfo->argv = ( char ** ) malloc ( sizeof ( char * ) * argc );
+    for ( int i = 0; i < argc; i++ ) {
+        pThreadCreateInfo->argv[i] = ( char * ) malloc ( sizeof ( char ) * strlen ( argv[i] ) + sizeof ( char ) );
+        strcpy ( pThreadCreateInfo->argv[i], argv[i] );
+    }
 
     pThreadInfo->createInfo = pThreadCreateInfo;
 
@@ -585,6 +590,11 @@ void * internalCreateThreadArgs ( void * pVoidArg ) {
 
     pArg->pFunc ( pArg->argc, pArg->argv );
 
+    for ( int i = 0; i < pArg->argc; i++ ) {
+        free ( pArg->argv[i] );
+    }
+
+    free ( pArg->argv );
     removeThreadInfo( pArg->ID );
     return NULL;
 }
